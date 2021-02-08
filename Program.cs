@@ -52,13 +52,13 @@ namespace SMTPOAuthSample
                 .WithRedirectUri("http://localhost")
                 .Build();
 
-            var popScope = new string[] { "https://outlook.office.com/SMTP.Send" };
+            var smtpScope = new string[] { "https://outlook.office.com/SMTP.Send" };
 
             try
             {
                 // Make the interactive token request
                 Console.WriteLine("Requesting access token (user must log-in via browser)");
-                var authResult = await pca.AcquireTokenInteractive(popScope).ExecuteAsync();
+                var authResult = await pca.AcquireTokenInteractive(smtpScope).ExecuteAsync();
                 if (String.IsNullOrEmpty(authResult.AccessToken))
                 {
                     Console.WriteLine("No token received");
@@ -119,21 +119,22 @@ namespace SMTPOAuthSample
         {
             try
             {
-                //System.Net.ServicePointManager.SecurityProtocol = System.Net.SecurityProtocolType.Tls12;
                 using (_smtpClient = new TcpClient("outlook.office365.com", 587))
                 {
+                    // We need to initiate the TLS connection
                     NetworkStream smtpStream = _smtpClient.GetStream();
                     ReadNetworkStream(smtpStream);
                     WriteNetworkStream(smtpStream, "EHLO OAuthTest.app");
                     ReadNetworkStream(smtpStream);
                     WriteNetworkStream(smtpStream, "STARTTLS");
                     if (ReadNetworkStream(smtpStream).StartsWith("220"))
-                        {
+                    {
                         using (_sslStream = new SslStream(smtpStream))
                         {
+                            // Now we can initialise and communicate over an encrypted connection
                             _sslStream.AuthenticateAsClient("outlook.office365.com");
 
-                            //ReadSSLStream();
+                            // EHLO again
                             WriteSSLStream("EHLO");
                             ReadSSLStream();
 
