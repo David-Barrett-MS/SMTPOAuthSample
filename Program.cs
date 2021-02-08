@@ -66,7 +66,7 @@ namespace SMTPOAuthSample
                 }
                 Console.WriteLine($"Token received for {authResult.Account.Username}");
 
-                // Use the token to connect to POP service
+                // Use the token to connect to SMTP service
                 SendMessageToSelf(authResult);
             }
             catch (MsalException ex)
