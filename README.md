@@ -8,7 +8,7 @@ Once the application is registered, the application can be run from a command pr
 
 `SMTPOAuthSample TenantId ApplicationId`
 
-If the parameters are valid, you will be prompted to log-in to the mailbox using the default system browser (SMTP only supports delegate access).  Once done, the application will use the token to log on to the mailbox and retrieve the number of unread messages in the Inbox.  The SMTP conversation will be shown in the console.
+If the parameters are valid, you will be prompted to log-in to the mailbox using the default system browser (SMTP only supports delegated access).  Once done, the application will use the token to log on to the mailbox and retrieve the number of unread messages in the Inbox.  The SMTP conversation will be shown in the console.
 
 A successful test looks like this:
 
