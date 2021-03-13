@@ -27,14 +27,22 @@ namespace SMTPOAuthSample
 
         static void Main(string[] args)
         {
+            // Check arguments
             if (args.Length < 2)
             {
-                Console.WriteLine($"Syntax: {System.Reflection.Assembly.GetExecutingAssembly().GetName().Name}.exe <TenantId> <ApplicationId>");
+                Console.WriteLine($"Syntax: {System.Reflection.Assembly.GetExecutingAssembly().GetName().Name}.exe <TenantId> <ApplicationId> <Email.eml>");
                 return;
             }
             string emlFile = "";
             if (args.Length > 2)
                 emlFile = args[2];
+            if (!String.IsNullOrEmpty(emlFile) && !System.IO.File.Exists(emlFile))
+            {
+                Console.WriteLine($"Couldn't find: {emlFile}");
+                return;
+            }
+
+            // Arguments seem fine, let's see if they work...
             var task = TestSMTP(args[1], args[0], emlFile);
             task.Wait();
         }
