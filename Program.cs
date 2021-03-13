@@ -32,11 +32,14 @@ namespace SMTPOAuthSample
                 Console.WriteLine($"Syntax: {System.Reflection.Assembly.GetExecutingAssembly().GetName().Name}.exe <TenantId> <ApplicationId>");
                 return;
             }
-            var task = TestSMTP(args[1], args[0]);
+            string emlFile = "";
+            if (args.Length > 2)
+                emlFile = args[2];
+            var task = TestSMTP(args[1], args[0], emlFile);
             task.Wait();
         }
 
-        static async Task TestSMTP(string ClientId, string TenantId)
+        static async Task TestSMTP(string ClientId, string TenantId, string EmlFile = "")
         {
 
             // Configure the MSAL client to get tokens
@@ -67,7 +70,7 @@ namespace SMTPOAuthSample
                 Console.WriteLine($"Token received for {authResult.Account.Username}");
 
                 // Use the token to connect to SMTP service
-                SendMessageToSelf(authResult);
+                SendMessageToSelf(authResult, EmlFile);
             }
             catch (MsalException ex)
             {
@@ -115,7 +118,7 @@ namespace SMTPOAuthSample
             Console.WriteLine(Data);
         }
 
-        static void SendMessageToSelf(AuthenticationResult authResult)
+        static void SendMessageToSelf(AuthenticationResult authResult, string EmlFile = "")
         {
             try
             {
@@ -140,33 +143,41 @@ namespace SMTPOAuthSample
 
                             // Initiate OAuth login
                             WriteSSLStream("AUTH XOAUTH2");
-                            if (ReadSSLStream().StartsWith("334"))
-                            {
-                                // Send OAuth token
-                                WriteSSLStream(XOauth2(authResult));
-                                if (ReadSSLStream().StartsWith("235"))
-                                {
-                                    // Logged in, send test message
+                            if (!ReadSSLStream().StartsWith("334"))
+                                throw new Exception("Failed on AUTH XOAUTH2");
 
-                                    // MAIL FROM
-                                    WriteSSLStream($"MAIL FROM:<{authResult.Account.Username}>");
-                                    if (ReadSSLStream().StartsWith("250"))
-                                    {
-                                        // RCPT TO
-                                        WriteSSLStream($"RCPT TO:<{authResult.Account.Username}>");
-                                        if (ReadSSLStream().StartsWith("250"))
-                                        {
-                                            // DATA
-                                            WriteSSLStream("DATA");
-                                            if (ReadSSLStream().StartsWith("354"))
-                                            {
-                                                WriteSSLStream($"Subject: OAuth SMTP Test Message{Environment.NewLine}{Environment.NewLine}This is a test.{Environment.NewLine}.");
-                                                ReadSSLStream();
-                                            }
-                                        }
-                                    }
-                                }
+                            // Send OAuth token
+                            WriteSSLStream(XOauth2(authResult));
+                            if (!ReadSSLStream().StartsWith("235"))
+                                throw new Exception("Log on failed");
+
+                            // Logged in, send test message
+
+                            // MAIL FROM
+                            WriteSSLStream($"MAIL FROM:<{authResult.Account.Username}>");
+                            if (!ReadSSLStream().StartsWith("250"))
+                                throw new Exception("Failed at MAIL FROM");
+
+                            // RCPT TO
+                            WriteSSLStream($"RCPT TO:<{authResult.Account.Username}>");
+                            if (!ReadSSLStream().StartsWith("250"))
+                                throw new Exception("Failed at RCPT TO");
+
+                            // DATA
+                            WriteSSLStream("DATA");
+                            if (!ReadSSLStream().StartsWith("354"))
+                                throw new Exception("Failed at DATA");
+
+                            if (String.IsNullOrEmpty(EmlFile))
+                                WriteSSLStream($"Subject: OAuth SMTP Test Message{Environment.NewLine}{Environment.NewLine}This is a test.{Environment.NewLine}.");
+                            else
+                            {
+                                // Read the .eml file and send that
+                                WriteSSLStream($"{System.IO.File.ReadAllText(EmlFile)}{Environment.NewLine}.{Environment.NewLine}");
                             }
+
+                            ReadSSLStream();
+                            
                             WriteSSLStream("QUIT");
                             ReadSSLStream();
 
@@ -177,6 +188,7 @@ namespace SMTPOAuthSample
             }
             catch (SocketException ex)
             {
+                // We should gracefully QUIT when we recieve an SMTP error, but that isn't implemented in this sample
                 Console.WriteLine(ex.Message);
             }
         }
