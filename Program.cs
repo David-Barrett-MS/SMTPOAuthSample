@@ -38,7 +38,7 @@ namespace SMTPOAuthSample
                 emlFile = args[2];
             if (!String.IsNullOrEmpty(emlFile) && !System.IO.File.Exists(emlFile))
             {
-                Console.WriteLine($"Couldn't find: {emlFile}");
+                Console.WriteLine($"Couldn't find email: {emlFile}");
                 return;
             }
 
@@ -95,35 +95,39 @@ namespace SMTPOAuthSample
         static string ReadSSLStream()
         {
             int bytes = -1;
-            byte[] buffer = new byte[2048];
+            byte[] buffer = new byte[4096];
             bytes = _sslStream.Read(buffer, 0, buffer.Length);
             string response = Encoding.ASCII.GetString(buffer, 0, bytes);
-            Console.WriteLine(response);
+            Console.WriteLine(response); // We add a blank line after the response as it makes the output easier to read
             return response;
         }
 
         static void WriteSSLStream(string Data)
         {
-            _sslStream.Write(Encoding.ASCII.GetBytes($"{Data}{Environment.NewLine}"));
+            if (!Data.EndsWith(Environment.NewLine))
+                Data = $"{Data}{Environment.NewLine}";
+            _sslStream.Write(Encoding.ASCII.GetBytes(Data));
             _sslStream.Flush();
-            Console.WriteLine(Data);
+            Console.Write(Data);
         }
 
         static string ReadNetworkStream(NetworkStream Stream)
         {
             int bytes = -1;
-            byte[] buffer = new byte[2048];
+            byte[] buffer = new byte[4096];
             bytes = Stream.Read(buffer, 0, buffer.Length);
             string response = Encoding.ASCII.GetString(buffer, 0, bytes);
-            Console.WriteLine(response);
+            Console.WriteLine(response); // We add a blank line after the response as it makes the output easier to read
             return response;
         }
 
         static void WriteNetworkStream(NetworkStream Stream, string Data)
         {
-            Stream.Write(Encoding.ASCII.GetBytes($"{Data}{Environment.NewLine}"));
+            if (!Data.EndsWith(Environment.NewLine))
+                Data = $"{Data}{Environment.NewLine}";
+            Stream.Write(Encoding.ASCII.GetBytes(Data));
             Stream.Flush();
-            Console.WriteLine(Data);
+            Console.Write(Data);
         }
 
         static void SendMessageToSelf(AuthenticationResult authResult, string EmlFile = "")
@@ -132,71 +136,93 @@ namespace SMTPOAuthSample
             {
                 using (_smtpClient = new TcpClient("outlook.office365.com", 587))
                 {
-                    // We need to initiate the TLS connection
                     NetworkStream smtpStream = _smtpClient.GetStream();
-                    ReadNetworkStream(smtpStream);
-                    WriteNetworkStream(smtpStream, "EHLO OAuthTest.app");
-                    ReadNetworkStream(smtpStream);
-                    WriteNetworkStream(smtpStream, "STARTTLS");
-                    if (ReadNetworkStream(smtpStream).StartsWith("220"))
+                    try
                     {
+                        // We need to initiate the TLS connection                       
+                        if (!ReadNetworkStream(smtpStream).StartsWith("220"))
+                            throw new Exception("Unexpected welcome message");
+
+                        WriteNetworkStream(smtpStream, "EHLO OAuthTest.app");
+                        if (!ReadNetworkStream(smtpStream).StartsWith("250"))
+                            throw new Exception("Failed on EHLO");
+
+                        WriteNetworkStream(smtpStream, "STARTTLS");
+                    }
+                    catch (Exception ex)
+                    {
+                        // We've received an error or unexpected response.  We'll send a QUIT as there's nothing more we can do.
+                        Console.WriteLine(ex.Message);
+                        WriteNetworkStream(smtpStream, "QUIT");
+                        smtpStream.Close();
+                        smtpStream = null;
+                    }
+
+                    if (smtpStream != null && ReadNetworkStream(smtpStream).StartsWith("220"))
+                    {
+                        // Now we can initialise and communicate over an encrypted connection
                         using (_sslStream = new SslStream(smtpStream))
-                        {
-                            // Now we can initialise and communicate over an encrypted connection
+                        {                            
                             _sslStream.AuthenticateAsClient("outlook.office365.com");
 
-                            // EHLO again
-                            WriteSSLStream("EHLO");
-                            ReadSSLStream();
-
-                            // Initiate OAuth login
-                            WriteSSLStream("AUTH XOAUTH2");
-                            if (!ReadSSLStream().StartsWith("334"))
-                                throw new Exception("Failed on AUTH XOAUTH2");
-
-                            // Send OAuth token
-                            WriteSSLStream(XOauth2(authResult));
-                            if (!ReadSSLStream().StartsWith("235"))
-                                throw new Exception("Log on failed");
-
-                            // Logged in, send test message
-
-                            // MAIL FROM
-                            WriteSSLStream($"MAIL FROM:<{authResult.Account.Username}>");
-                            if (!ReadSSLStream().StartsWith("250"))
-                                throw new Exception("Failed at MAIL FROM");
-
-                            // RCPT TO
-                            WriteSSLStream($"RCPT TO:<{authResult.Account.Username}>");
-                            if (!ReadSSLStream().StartsWith("250"))
-                                throw new Exception("Failed at RCPT TO");
-
-                            // DATA
-                            WriteSSLStream("DATA");
-                            if (!ReadSSLStream().StartsWith("354"))
-                                throw new Exception("Failed at DATA");
-
-                            if (String.IsNullOrEmpty(EmlFile))
-                                WriteSSLStream($"Subject: OAuth SMTP Test Message{Environment.NewLine}{Environment.NewLine}This is a test.{Environment.NewLine}.");
-                            else
+                            try
                             {
-                                // Read the .eml file and send that
-                                WriteSSLStream($"{System.IO.File.ReadAllText(EmlFile)}{Environment.NewLine}.{Environment.NewLine}");
-                            }
+                                // EHLO again
+                                WriteSSLStream("EHLO");
+                                ReadSSLStream();
 
-                            ReadSSLStream();
-                            
+                                // Initiate OAuth login
+                                WriteSSLStream("AUTH XOAUTH2");
+                                if (!ReadSSLStream().StartsWith("334"))
+                                    throw new Exception("Failed on AUTH XOAUTH2");
+
+                                // Send OAuth token
+                                WriteSSLStream(XOauth2(authResult));
+                                if (!ReadSSLStream().StartsWith("235"))
+                                    throw new Exception("Log on failed");
+
+                                // Logged in, send test message
+
+                                // MAIL FROM
+                                WriteSSLStream($"MAIL FROM:<{authResult.Account.Username}>");
+                                if (!ReadSSLStream().StartsWith("250"))
+                                    throw new Exception("Failed at MAIL FROM");
+
+                                // RCPT TO
+                                WriteSSLStream($"RCPT TO:<{authResult.Account.Username}>");
+                                if (!ReadSSLStream().StartsWith("250"))
+                                    throw new Exception("Failed at RCPT TO");
+
+                                // DATA
+                                WriteSSLStream("DATA");
+                                if (!ReadSSLStream().StartsWith("354"))
+                                    throw new Exception("Failed at DATA");
+
+                                if (String.IsNullOrEmpty(EmlFile))
+                                    WriteSSLStream($"Subject: OAuth SMTP Test Message{Environment.NewLine}{Environment.NewLine}This is a test.{Environment.NewLine}.{Environment.NewLine}");
+                                else
+                                {
+                                    // Read the .eml file and send that
+                                    WriteSSLStream($"{System.IO.File.ReadAllText(EmlFile)}{Environment.NewLine}.{Environment.NewLine}");
+                                }
+
+                                ReadSSLStream();
+                            }
+                            catch (Exception ex)
+                            {
+                                Console.WriteLine(ex.Message);
+                            }
                             WriteSSLStream("QUIT");
                             ReadSSLStream();
 
                             Console.WriteLine("Closing connection");
                         }
                     }
+                    smtpStream?.Close();
                 }
             }
             catch (SocketException ex)
             {
-                // We should gracefully QUIT when we recieve an SMTP error, but that isn't implemented in this sample
                 Console.WriteLine(ex.Message);
             }
         }
