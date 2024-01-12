@@ -5,6 +5,8 @@
     <TargetFramework>net7.0</TargetFramework>
     <BaseOutputPath>E:\Temp\SMTPOAuthSample</BaseOutputPath>
     <RepositoryUrl>https://github.com/David-Barrett-MS/SMTPOAuthSample.git</RepositoryUrl>
+    <AssemblyVersion>1.0.1</AssemblyVersion>
+    <FileVersion>1.0.1</FileVersion>
   </PropertyGroup>
 
   <ItemGroup>
