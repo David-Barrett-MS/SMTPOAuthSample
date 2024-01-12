@@ -6,12 +6,16 @@ You must register the application in Azure AD as per [this guide](https://docs.m
 
 Once the application is registered, the application can be run from a command prompt (or PowerShell console).  The syntax is:
 
+Delegate flow:
 `SMTPOAuthSample TenantId ApplicationId <EmailFile>`
+
+App (client credential) flow:
+`SMTPOAuthSample TenantId ApplicationId SecretKey Mailbox <EmailFile>`
 
 `<EmailFile>` is optional, but if specified it will be sent as the DATA part of the SMTP conversation (it should be a standard MIME file in .eml format).  This can be useful for replaying/testing messages.  If this parameter is missing, a simple test message is created instead.
 
-If the parameters are valid, you will be prompted to log-in to the mailbox using the default system browser (SMTP only supports delegated access).  Once done, the application will use the token to send an email to the user.  The SMTP conversation will be shown in the console.
+If using delegate flow, you will be prompted to log-in via a browser.  If successful, the mail is sent from the mailbox of the authenticated user.  For client credential flow, the mailbox is specified in the parameters with the secret key, and no user input is required.
 
-A successful test looks like this:
+A successful test (delegate flow) looks like this:
 
 ![SMTPOAuthSample Successful Test Screenshot](https://github.com/David-Barrett-MS/SMTPOAuthSample/blob/master/SMTPOAuthSampleScreenshot.png?raw=true "SMTPOAuthSample Successful Test Screenshot")
