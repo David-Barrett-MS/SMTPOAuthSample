@@ -1,5 +1,5 @@
 ﻿/*
- * By David Barrett, Microsoft Ltd. 2021. Use at your own risk.  No warranties are given.
+ * By David Barrett, Microsoft Ltd. Use at your own risk.  No warranties are given.
  * 
  * DISCLAIMER:
  * THIS CODE IS SAMPLE CODE. THESE SAMPLES ARE PROVIDED "AS IS" WITHOUT WARRANTY OF ANY KIND.
@@ -24,18 +24,28 @@ namespace SMTPOAuthSample
     {
         private static TcpClient _smtpClient = null;
         private static SslStream _sslStream = null;
+        /// <summary>
+        /// SMTP server address
+        /// </summary>
+        private static string _smtpEndpoint = "outlook.office365.com";
 
         static void Main(string[] args)
         {
             // Check arguments
             if (args.Length < 2)
             {
-                Console.WriteLine($"Syntax: {System.Reflection.Assembly.GetExecutingAssembly().GetName().Name}.exe <TenantId> <ApplicationId> <Email.eml>");
+                Console.WriteLine("OAuth syntax:");
+                Console.WriteLine($"{System.Reflection.Assembly.GetExecutingAssembly().GetName().Name}.exe <TenantId> <ApplicationId> <Email.eml>");
+                Console.WriteLine($"{System.Reflection.Assembly.GetExecutingAssembly().GetName().Name}.exe <TenantId> <ApplicationId> <SecretKey> <Mailbox> <Email.eml>");
+                Console.WriteLine();
                 return;
             }
             string emlFile = "";
-            if (args.Length > 2)
+            if (args.Length ==3)
                 emlFile = args[2];
+            else if (args.Length == 5)
+                emlFile = args[4];
+
             if (!String.IsNullOrEmpty(emlFile) && !System.IO.File.Exists(emlFile))
             {
                 Console.WriteLine($"Couldn't find email: {emlFile}");
@@ -43,42 +53,78 @@ namespace SMTPOAuthSample
             }
 
             // Arguments seem fine, let's see if they work...
-            var task = TestSMTP(args[1], args[0], emlFile);
+            Task task = null;
+            if (args.Length > 3)
+            {
+                // Client credentials flow
+                task = TestSMTPOAuth(args[1], args[0], args[2], args[3], emlFile);
+            }
+            else
+                task = TestSMTPOAuth(args[1], args[0], null, null, emlFile);
             task.Wait();
         }
 
-        static async Task TestSMTP(string ClientId, string TenantId, string EmlFile = "")
+        static async Task TestSMTPOAuth(string ClientId, string TenantId, string SecretKey, string Mailbox, string EmlFile = "")
         {
-
-            // Configure the MSAL client to get tokens
-            var pcaOptions = new PublicClientApplicationOptions
+            string[] smtpScope = new string[] { $"https://{_smtpEndpoint}/SMTP.Send" };
+            if (String.IsNullOrEmpty(Mailbox))
             {
-                ClientId = ClientId,
-                TenantId = TenantId
-            };
+                // Configure the MSAL client to get tokens
+                var pcaOptions = new PublicClientApplicationOptions
+                {
+                    ClientId = ClientId,
+                    TenantId = TenantId
+                };
 
-            Console.WriteLine("Building application");
-            var pca = PublicClientApplicationBuilder
-                .CreateWithApplicationOptions(pcaOptions)
-                .WithRedirectUri("http://localhost")
+                Console.WriteLine("Building application");
+                var pca = PublicClientApplicationBuilder
+                    .CreateWithApplicationOptions(pcaOptions)
+                    .WithRedirectUri("http://localhost")
+                    .Build();
+
+                try
+                {
+                    // Make the interactive token request
+                    Console.WriteLine("Requesting access token (user must log-in via browser)");
+                    var authResult = await pca.AcquireTokenInteractive(smtpScope).ExecuteAsync();
+                    if (String.IsNullOrEmpty(authResult.AccessToken))
+                    {
+                        Console.WriteLine("No token received");
+                        return;
+                    }
+                    Console.WriteLine($"Token received for {authResult.Account.Username}");
+
+                    // Use the token to connect to SMTP service
+                    SendMessageToSelf(authResult, EmlFile);
+                }
+                catch (MsalException ex)
+                {
+                    Console.WriteLine($"Error acquiring access token: {ex}");
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Error: {ex}");
+                }
+                Console.WriteLine("Finished");
+                return;
+            }
+
+            // Client credentials flow
+            var cca = ConfidentialClientApplicationBuilder.Create(ClientId)
+                .WithAuthority(AzureCloudInstance.AzurePublic, TenantId)
+                .WithClientSecret(SecretKey)
                 .Build();
-
-            var smtpScope = new string[] { "https://outlook.office.com/SMTP.Send" };
+            smtpScope = new string[] { $"https://{_smtpEndpoint}/.default" };
 
             try
             {
-                // Make the interactive token request
-                Console.WriteLine("Requesting access token (user must log-in via browser)");
-                var authResult = await pca.AcquireTokenInteractive(smtpScope).ExecuteAsync();
-                if (String.IsNullOrEmpty(authResult.AccessToken))
-                {
-                    Console.WriteLine("No token received");
-                    return;
-                }
-                Console.WriteLine($"Token received for {authResult.Account.Username}");
+                // Acquire the token
+                Console.WriteLine("Requesting access token (client credentials - no user interaction required)");
+                var authResult = await cca.AcquireTokenForClient(smtpScope).ExecuteAsync();
+                Console.WriteLine($"Token received");
 
-                // Use the token to connect to SMTP service
-                SendMessageToSelf(authResult, EmlFile);
+                // Use the token to send a message using SMTP
+                SendMessageToSelf(authResult, EmlFile, Mailbox);
             }
             catch (MsalException ex)
             {
@@ -88,8 +134,6 @@ namespace SMTPOAuthSample
             {
                 Console.WriteLine($"Error: {ex}");
             }
-            Console.WriteLine("Finished");
-
         }
 
         static string ReadSSLStream()
@@ -130,8 +174,38 @@ namespace SMTPOAuthSample
             Console.Write(Data);
         }
 
-        static void SendMessageToSelf(AuthenticationResult authResult, string EmlFile = "")
+        static bool LogonOAuth(string Mailbox, string Token)
         {
+            // Initiate OAuth login
+            WriteSSLStream("AUTH XOAUTH2");
+            if (!ReadSSLStream().StartsWith("334"))
+                throw new Exception("Failed on AUTH XOAUTH2");
+
+            // Send OAuth token
+            WriteSSLStream(XOauth2(Mailbox, Token));
+            if (!ReadSSLStream().StartsWith("235"))
+                throw new Exception("Log on failed");
+            return true;
+        }
+
+        static bool LogonBasic(string Mailbox, string Password)
+        {
+            // Initiate OAuth login
+            WriteSSLStream("AUTH BASIC");
+            if (!ReadSSLStream().StartsWith("334"))
+                throw new Exception("Failed on AUTH BASIC");
+
+            // Send OAuth token
+            WriteSSLStream(BasicAuth(Mailbox, Password));
+            if (!ReadSSLStream().StartsWith("235"))
+                throw new Exception("Log on failed");
+            return true;
+        }
+
+        static void SendMessageToSelf(AuthenticationResult authResult, string EmlFile = "", string sender = "")
+        {
+            if (String.IsNullOrEmpty(sender))
+                sender = authResult.Account.Username;
             try
             {
                 using (_smtpClient = new TcpClient("outlook.office365.com", 587))
@@ -171,25 +245,19 @@ namespace SMTPOAuthSample
                                 WriteSSLStream("EHLO");
                                 ReadSSLStream();
 
-                                // Initiate OAuth login
-                                WriteSSLStream("AUTH XOAUTH2");
-                                if (!ReadSSLStream().StartsWith("334"))
-                                    throw new Exception("Failed on AUTH XOAUTH2");
-
-                                // Send OAuth token
-                                WriteSSLStream(XOauth2(authResult));
-                                if (!ReadSSLStream().StartsWith("235"))
+                                // Perform login
+                                if (!LogonOAuth(sender, authResult.AccessToken))
                                     throw new Exception("Log on failed");
 
                                 // Logged in, send test message
 
                                 // MAIL FROM
-                                WriteSSLStream($"MAIL FROM:<{authResult.Account.Username}>");
+                                WriteSSLStream($"MAIL FROM:<{sender}>");
                                 if (!ReadSSLStream().StartsWith("250"))
                                     throw new Exception("Failed at MAIL FROM");
 
                                 // RCPT TO
-                                WriteSSLStream($"RCPT TO:<{authResult.Account.Username}>");
+                                WriteSSLStream($"RCPT TO:<{sender}>");
                                 if (!ReadSSLStream().StartsWith("250"))
                                     throw new Exception("Failed at RCPT TO");
 
@@ -227,14 +295,19 @@ namespace SMTPOAuthSample
             }
         }
 
-        static string XOauth2(AuthenticationResult authResult)
+        static string XOauth2(string Mailbox, string Token)//AuthenticationResult authResult)
         {
             // Create the log-in code, which is a base 64 encoded combination of user and auth token
 
             char ctrlA = (char)1;
-            string login = $"user={authResult.Account.Username}{ctrlA}auth=Bearer {authResult.AccessToken}{ctrlA}{ctrlA}";
+            string login = $"user={Mailbox}{ctrlA}auth=Bearer {Token}{ctrlA}{ctrlA}";
             var plainTextBytes = System.Text.Encoding.UTF8.GetBytes(login);
             return Convert.ToBase64String(plainTextBytes);
+        }
+
+        static string BasicAuth(string Mailbox, string Password)
+        {
+            return String.Empty;
         }
     }
 }

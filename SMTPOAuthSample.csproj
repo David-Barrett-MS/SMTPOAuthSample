@@ -2,7 +2,9 @@
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <TargetFramework>netcoreapp3.1</TargetFramework>
+    <TargetFramework>net7.0</TargetFramework>
+    <BaseOutputPath>E:\Temp\SMTPOAuthSample</BaseOutputPath>
+    <RepositoryUrl>https://github.com/David-Barrett-MS/SMTPOAuthSample.git</RepositoryUrl>
   </PropertyGroup>
 
   <ItemGroup>
