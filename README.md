@@ -8,9 +8,9 @@ Once the application is registered, the application can be run from a command pr
 
 `SMTPOAuthSample TenantId ApplicationId <EmailFile>`
 
-<EmailFile> is optional, but if specified it will be sent as the DATA part of the SMTP conversation (it should be a standard MIME file in .eml format).  This can be useful for replaying/testing messages.  If this parameter is missing, a simple test message is created instead.
+`<EmailFile>` is optional, but if specified it will be sent as the DATA part of the SMTP conversation (it should be a standard MIME file in .eml format).  This can be useful for replaying/testing messages.  If this parameter is missing, a simple test message is created instead.
 
-If the parameters are valid, you will be prompted to log-in to the mailbox using the default system browser (SMTP only supports delegated access).  Once done, the application will use the token to log on to the mailbox and retrieve the number of unread messages in the Inbox.  The SMTP conversation will be shown in the console.
+If the parameters are valid, you will be prompted to log-in to the mailbox using the default system browser (SMTP only supports delegated access).  Once done, the application will use the token to send an email to the user.  The SMTP conversation will be shown in the console.
 
 A successful test looks like this:
 
